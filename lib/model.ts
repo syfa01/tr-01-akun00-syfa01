@@ -6,7 +6,7 @@
 // protocol and the arithmetic behind it.
 //
 // What it reads. Every figure comes from the sealed snapshot alone:
-//   - `tvl_usd`, `change_7d`, `listed_at` for the pre-token protocol being scored;
+//   - `tvl_usd`, `change_7d`, `listed_at` and `chains` for the pre-token protocol being scored;
 //   - the market's own `mcap_usd`/`tvl_usd` ratios, computed across the token-bearing protocols in the
 //     snapshot, as the comparable a pre-token protocol's token would price against.
 // No protocol name is special-cased. The same function scores every row.
