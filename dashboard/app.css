@@ -129,6 +129,17 @@ tbody tr[data-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--
 .rank { font-family: var(--font-num); font-weight: 600; color: var(--ink); }
 .rank.top { color: var(--accent); }
 
+/* ---------------------------------------------------------------- model strip */
+.strip {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s3);
+  padding: var(--s3) var(--s4); margin-bottom: var(--s3);
+  background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-control); font-size: 12.5px; color: var(--muted);
+}
+.strip-label { font-family: var(--font-num); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.strip-text b { color: var(--ink); font-weight: 600; }
+.strip-eg { font-family: var(--font-num); font-size: 11.5px; }
+
 /* ---------------------------------------------------------------- model panel */
 .model { margin-top: var(--s4); padding: var(--s5); display: grid; gap: var(--s3); }
 .formula { font-family: var(--font-num); font-size: 12.5px; line-height: 1.9; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-control); padding: var(--s3) var(--s4); overflow-wrap: anywhere; }

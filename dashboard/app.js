@@ -341,6 +341,18 @@
     );
   }
 
+  function modelStrip() {
+    var m = DATA.model;
+    var top = DATA.comparables.slice(0, 4).map(function (c) { return c.category + ' ' + fmtMult(c.multiple); }).join(' \u00b7 ');
+    return el('div', { class: 'strip' },
+      el('span', { class: 'strip-label', text: DATA.model_version }),
+      el('span', { class: 'strip-text' },
+        el('b', { text: 'implied' }), ' = TVL \u00d7 ', el('b', { text: 'comparable' }), ' (market mcap/TVL, measured) \u00d7 growth(\u00b1', String(Math.round(m.growth_weight * 100)), '%) \u00d7 maturity(' + String(m.maturity_floor) + '\u2013' + fmtMult(m.maturity_floor + m.maturity_range) + ', saturating at ' + (m.maturity_days / 365).toFixed(0) + 'y). Snapshot median ' + fmtMult(DATA.comparable_overall)
+      ),
+      el('span', { class: 'strip-eg', text: 'e.g. ' + top })
+    );
+  }
+
   function modelPanel() {
     var m = DATA.model;
     var top = DATA.comparables.slice(0, 10);
@@ -441,6 +453,7 @@
     shell.appendChild(header());
     shell.appendChild(lede());
     shell.appendChild(controls());
+    shell.appendChild(state.tab === 'pre-token' ? modelStrip() : el('div'));
     shell.appendChild(state.tab === 'pre-token' ? boardTable() : liveTable());
     if (state.tab === 'pre-token') shell.appendChild(modelPanel());
     app.appendChild(shell);
