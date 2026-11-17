@@ -34,12 +34,15 @@
 
   // The model in one function: the page recomputes a row from the snapshot figures and checks the
   // number board.json carries, so the page's code and the board's data are visibly the same arithmetic.
+  // implied = TVL x comparable x growth x maturity x breadth, the five terms radar-3 states.
   function impliedOf(row, model) {
     var growth = Math.min(model.growth_cap, Math.max(model.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
     var growthMult = 1 + (growth / 100) * model.growth_weight;
     var age = row.age_days === null || row.age_days === undefined ? model.unknown_age_days : row.age_days;
     var maturity = model.maturity_floor + (Math.min(Math.max(age, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
-    return Math.max(1, Math.round(row.tvl_usd * row.comparable_multiple * growthMult * maturity));
+    var chains = row.chain_count || 1;
+    var breadth = chains <= 1 ? 1 : 1 + model.breadth_weight * (Math.log(Math.min(chains, model.breadth_cap)) / Math.log(2)) / (Math.log(model.breadth_cap) / Math.log(2));
+    return Math.max(1, Math.round(row.tvl_usd * row.comparable_multiple * growthMult * maturity * breadth));
   }
 
   function el(tag, attrs) {
@@ -96,25 +99,26 @@
     if (c.indexOf('governance') >= 0) return "Lock $" + capital + " of the protocol's own asset through " + name + ' on ' + chain + ' and vote with it.';
     return 'Deposit $' + capital + ' of USDC into ' + name + ' on ' + chain + ' and keep the position open.';
   }
-  function stepText(step) {
-    var s = step.text + ' Cost: ' + step.cost + '. Time: ' + step.time + '.';
-    if (s.length > 600) s = s.slice(0, 596) + '...';
-    if (s.length < 20) s = s + " Hold the position and check the protocol's own page.";
-    return s;
-  }
-  function farmSteps(p) {
+  // Each step carries a cost (USD or a percentage) and a time (days where it is a holding period).
+  function farmPlan(p) {
     var chain = chainOf(p);
     var capital = capitalFor(p);
     var hold = holdDaysFor(p.age_days);
     var gas = capital >= 150 ? 8 : capital >= 75 ? 6 : 4;
     return [
-      { text: 'Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', cost: 'under $3 of gas for the first transaction', time: '5 minutes' },
-      { text: actionFor(p, capital, chain), cost: '$' + capital + ' of capital and about $' + gas + ' of gas', time: '15 minutes to set up' },
-      { text: 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.', cost: 'about $2 of gas a week', time: '10 minutes a week' },
-      { text: 'Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', cost: 'the $' + capital + ' stays in the position', time: hold + ' days' },
-      { text: "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes.", cost: 'no fee to check, and never pay to claim', time: '10 minutes' },
-      { text: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', cost: 'nothing but the log', time: '5 minutes' }
-    ].map(stepText);
+      { action: 'Pick a fresh wallet that holds only the funds you plan to farm, note its address, and keep its seed phrase offline.', cost: '$0 of fees; no deposit yet', time: '1 day to set up' },
+      { action: 'Fund the wallet with $' + capital + ' of USDC and $' + gas + ' of gas on ' + chain + ', then deposit: ' + actionFor(p, capital, chain), cost: '$' + (capital + gas) + ' in all ($' + capital + ' at work, about $' + gas + ' of gas)', time: '1 day to set up and deposit' },
+      { action: 'Keep the position open for ' + hold + ' days so the activity lands in more than one weekly snapshot of ' + p.name + '.', cost: '$' + capital + ' stays in the position; about 0.3% a year of pool fees where the pool charges one', time: hold + ' days of holding' },
+      { action: 'Make one qualifying action a week, a deposit, a borrow, a swap or a vote, for the first four weeks.', cost: 'about $8 of gas over four weeks', time: '4 weeks, 10 minutes a week' },
+      { action: "Before you withdraw, open " + p.name + "'s own points or rewards page and claim only from the link it publishes on " + chain + '.', cost: 'no fee to check; never pay to claim', time: '1 day to claim and verify' },
+      { action: 'Withdraw, unwrap and record the wallet, the dates and every transaction in a farm log, then repeat or stop.', cost: 'about $' + gas + ' of gas to exit', time: '1 day to unwind and log' }
+    ];
+  }
+  function farmTotal(p) {
+    var capital = capitalFor(p);
+    var hold = holdDaysFor(p.age_days);
+    var gas = capital >= 150 ? 8 : capital >= 75 ? 6 : 4;
+    return { capital_usd: capital, gas_usd: gas * 3, days: 3 + hold + 28, steps: 6 };
   }
 
   function readHash() {
@@ -164,6 +168,7 @@
       else if (key === 'growth') { av = a.change_7d === null ? -Infinity : a.change_7d; bv = b.change_7d === null ? -Infinity : b.change_7d; }
       else if (key === 'age') { av = a.age_days === null ? Infinity : a.age_days; bv = b.age_days === null ? Infinity : b.age_days; }
       else if (key === 'mult') { av = a.comparable_multiple; bv = b.comparable_multiple; }
+      else if (key === 'breadth') { av = a.chain_count; bv = b.chain_count; }
       else if (key === 'implied') { av = a.implied_value_usd; bv = b.implied_value_usd; }
       else { av = a.rank; bv = b.rank; }
       if (av < bv) return -state.dir;
@@ -278,6 +283,7 @@
         el('td', { class: 'num ' + growthClass, text: growth }),
         el('td', { class: 'num', text: fmtAge(r.age_days) }),
         el('td', { class: 'num', text: fmtMult(r.comparable_multiple) }),
+        el('td', { class: 'num', text: String(r.chain_count) }),
         el('td', null, el('div', { class: 'implied' },
           el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(3, Math.round((r.implied_value_usd / max) * 100)) + '%' })),
           el('span', { class: 'num', text: fmtUsd(r.implied_value_usd) })
@@ -297,6 +303,7 @@
             sortHeader('growth', '7d'),
             sortHeader('age', 'No token for'),
             sortHeader('mult', 'Comparable'),
+            sortHeader('breadth', 'Chains'),
             sortHeader('implied', 'Implied value', 'right'),
             el('th', { scope: 'col', text: 'Source' })
           )),
@@ -347,7 +354,7 @@
     return el('div', { class: 'strip' },
       el('span', { class: 'strip-label', text: DATA.model_version }),
       el('span', { class: 'strip-text' },
-        el('b', { text: 'implied' }), ' = TVL \u00d7 ', el('b', { text: 'comparable' }), ' (market mcap/TVL, measured) \u00d7 growth(\u00b1', String(Math.round(m.growth_weight * 100)), '%) \u00d7 maturity(' + String(m.maturity_floor) + '\u2013' + fmtMult(m.maturity_floor + m.maturity_range) + ', saturating at ' + (m.maturity_days / 365).toFixed(0) + 'y). Snapshot median ' + fmtMult(DATA.comparable_overall)
+        el('b', { text: 'implied' }), ' = TVL \u00d7 ', el('b', { text: 'comparable' }), ' (market mcap/TVL, measured) \u00d7 growth(\u00b1', String(Math.round(m.growth_weight * 100)), '%) \u00d7 maturity(' + String(m.maturity_floor) + '\u2013' + fmtMult(m.maturity_floor + m.maturity_range) + ', saturating at ' + (m.maturity_days / 365).toFixed(0) + 'y) \u00d7 breadth(1\u2013' + fmtMult(1 + m.breadth_weight) + ' over ' + m.breadth_cap + ' chains). Snapshot median ' + fmtMult(DATA.comparable_overall)
       ),
       el('span', { class: 'strip-eg', text: 'e.g. ' + top })
     );
@@ -358,20 +365,21 @@
     var top = DATA.comparables.slice(0, 10);
     return el('section', { class: 'panel model' },
       el('h2', { text: 'How implied value is computed' }),
-      el('p', { class: 'sub', text: 'Every row is scored by one function of the snapshot figures, with no name special-cased and no row hand-picked. The market\'s own mcap-to-TVL ratios, measured across the snapshot\'s token-bearing protocols, set the multiple a category earns.' }),
+      el('p', { class: 'sub', text: 'Every row is scored by one function of the snapshot figures, with no name special-cased and no row hand-picked. The market\'s own mcap-to-TVL ratios, measured across the snapshot\'s token-bearing protocols, set the multiple a category earns; three more terms ride on the snapshot\'s change_7d, listed_at and chains.' }),
       el('div', { class: 'formula' },
-        el('em', { text: 'implied' }), ' = round( tvl_usd \u00d7 comparable \u00d7 (1 + clamp(change_7d, ', String(m.growth_floor), ', ', String(m.growth_cap), ') / 100 \u00d7 ', String(m.growth_weight), ') \u00d7 (', String(m.maturity_floor), ' + min(age_days, ', String(m.maturity_days), ') / ', String(m.maturity_days), ' \u00d7 ', String(m.maturity_range), ') )'
+        el('em', { text: 'implied' }), ' = round( tvl_usd \u00d7 comparable \u00d7 (1 + clamp(change_7d, ', String(m.growth_floor), ', ', String(m.growth_cap), ') / 100 \u00d7 ', String(m.growth_weight), ') \u00d7 (', String(m.maturity_floor), ' + min(age_days, ', String(m.maturity_days), ') / ', String(m.maturity_days), ' \u00d7 ', String(m.maturity_range), ') \u00d7 (1 + ', String(m.breadth_weight), ' \u00d7 log\u2082(min(chains, ', String(m.breadth_cap), ')) / log\u2082(', String(m.breadth_cap), ')) )'
       ),
       el('div', { class: 'model-grid' },
         el('div', null,
-          el('h3', { text: 'The three inputs' }),
+          el('h3', { text: 'The five inputs, all from the snapshot' }),
           el('div', { class: 'equation' },
             el('div', null, el('span', { text: 'TVL (snapshot)' }), el('b', { text: 'what the protocol holds today' })),
             el('div', null, el('span', { text: '7d growth (snapshot)' }), el('b', { text: 'deposits arriving or leaving' })),
             el('div', null, el('span', { text: 'No token for (snapshot)' }), el('b', { text: 'how long it has run unlisted' })),
+            el('div', null, el('span', { text: 'Chain breadth (snapshot)' }), el('b', { text: 'how many chains it runs on' })),
             el('div', null, el('span', { text: 'Comparable (measured)' }), el('b', { text: 'median mcap/TVL, shrunk to the snapshot' }))
           ),
-          el('p', { class: 'sub', style: 'margin-top:12px', text: 'Age is the time since DefiLlama first listed the protocol, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. The snapshot\'s whole-index median mcap/TVL is ' + fmtMult(DATA.comparable_overall) + ', and a category with few samples is pulled toward it.' })
+          el('p', { class: 'sub', style: 'margin-top:12px', text: 'Age is the time since DefiLlama first listed the protocol, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. Chain breadth is a second, independent signal: a protocol on ' + m.breadth_cap + ' or more chains earns ' + fmtMult(1 + m.breadth_weight) + ', one on a single chain earns 1.00x. The snapshot\'s whole-index median mcap/TVL is ' + fmtMult(DATA.comparable_overall) + ', and a category with few samples is pulled toward it.' })
         ),
         el('div', null,
           el('h3', { text: 'Comparables the board measures against' }),
@@ -399,7 +407,6 @@
     state.selected = slug;
     writeHash();
     dialog.textContent = '';
-    var steps = farmSteps(row);
     var recomputed = impliedOf(row, DATA.model);
     dialog.appendChild(el('div', { class: 'detail-head' },
       el('div', null,
@@ -418,26 +425,34 @@
       el('h3', { text: 'Implied value' }),
       el('div', { class: 'hero-value' }, el('b', { text: fmtUsd(row.implied_value_usd) }), el('span', { text: 'if the record stays as it is' })),
       el('div', { class: 'equation' },
-        el('div', null, el('span', { text: 'TVL' }), el('b', { class: 'num', text: fmtUsd(row.tvl_usd) })),
-        el('div', null, el('span', { text: 'Comparable mcap/TVL (' + row.category_sample + (row.category_sample === 1 ? ' sample' : ' samples') + ')' }), el('b', { class: 'num', text: fmtMult(row.comparable_multiple) })),
-        el('div', null, el('span', { text: 'Seven-day growth' }), el('b', { class: 'num', text: fmtPct(row.change_7d) })),
+        el('div', null, el('span', { text: 'TVL (snapshot)' }), el('b', { class: 'num', text: fmtUsd(row.tvl_usd) })),
+        el('div', null, el('span', { text: 'Comparable mcap/TVL ("' + (row.category || 'Other') + '" category, ' + row.category_sample + (row.category_sample === 1 ? ' sample' : ' samples') + ')' }), el('b', { class: 'num', text: fmtMult(row.comparable_multiple) })),
+        el('div', null, el('span', { text: 'Seven-day growth (snapshot)' }), el('b', { class: 'num ' + (row.change_7d !== null && row.change_7d >= 0 ? 'pos' : 'neg'), text: fmtPct(row.change_7d) })),
         el('div', null, el('span', { text: 'Growth multiplier' }), el('b', { class: 'num', text: fmtMult(row.growth_multiplier) })),
-        el('div', null, el('span', { text: 'No token for' }), el('b', { class: 'num', text: fmtAge(row.age_days) })),
-        el('div', null, el('span', { text: 'Maturity multiplier' }), el('b', { class: 'num', text: fmtMult(row.maturity_multiplier) })),
+        el('div', null, el('span', { text: 'No token for: ' + fmtAge(row.age_days) + ' since ' + (row.listed_at || 'an unknown listing') }), el('b', { class: 'num', text: fmtMult(row.maturity_multiplier) })),
+        el('div', null, el('span', { text: 'Chain breadth: ' + row.chain_count + (row.chain_count === 1 ? ' chain' : ' chains') }), el('b', { class: 'num', text: fmtMult(row.breadth_multiplier) })),
         el('div', { class: 'total' }, el('span', { text: 'Implied value' }), el('b', { class: 'num', text: fmtUsd(row.implied_value_usd) }))
       ),
-      el('p', { class: 'sub', style: 'margin-top:12px', text: 'Model ' + DATA.model_version + ': the page recomputes this row as ' + fmtUsd(recomputed) + (recomputed === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' An estimate of what a token may be worth, not a price, and not a claim that one is issued.' })
+      el('p', { class: 'sub', style: 'margin-top:12px', text: 'Model ' + DATA.model_version + ': ' + fmtUsd(row.tvl_usd) + ' \u00d7 ' + fmtMult(row.comparable_multiple) + ' \u00d7 ' + fmtMult(row.growth_multiplier) + ' \u00d7 ' + fmtMult(row.maturity_multiplier) + ' \u00d7 ' + fmtMult(row.breadth_multiplier) + ' = ' + fmtUsd(recomputed) + (recomputed === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' An estimate of what a token may be worth, not a price, and not a claim that one is issued.' })
     ));
 
+    var plan = farmPlan(row);
+    var total = farmTotal(row);
     dialog.appendChild(el('section', { class: 'detail-section' },
-      el('h3', { text: 'Farm plan' }),
-      el('p', { class: 'sub', style: 'margin-bottom:12px', text: 'Concrete steps, each with what it costs and how long it takes, derived from this protocol\'s category, chains, size and age.' }),
-      el('ol', { class: 'steps' }, steps.map(function (s) {
-        var at = s.indexOf(' Cost: ');
-        var action = at >= 0 ? s.slice(0, at) : s;
-        var tail = at >= 0 ? s.slice(at + 1) : '';
-        return el('li', null, el('b', { text: action }), el('span', { class: 'cost', text: tail }));
-      }))
+      el('h3', { text: 'Farm plan: ' + total.steps + ' steps' }),
+      el('p', { class: 'sub', style: 'margin-bottom:12px', text: 'Concrete steps, each with what it costs and how long it takes, derived from this protocol\'s category, chains, size and age: no name is special-cased.' }),
+      el('ol', { class: 'steps' }, plan.map(function (s) {
+        return el('li', null,
+          el('b', { text: s.action }),
+          el('span', { class: 'cost' }, el('em', { text: 'Cost ' }), s.cost + '  \u00b7  ', el('em', { text: 'Time ' }), s.time)
+        );
+      })),
+      el('div', { class: 'plan-total' },
+        el('div', { class: 'total-item' }, el('span', { text: 'Capital at work' }), el('b', { text: usd0.format(total.capital_usd) })),
+        el('div', { class: 'total-item' }, el('span', { text: 'Gas, in and out' }), el('b', { text: '$' + total.gas_usd })),
+        el('div', { class: 'total-item' }, el('span', { text: 'Total cost' }), el('b', { text: usd0.format(total.capital_usd + total.gas_usd) })),
+        el('div', { class: 'total-item' }, el('span', { text: 'Total time' }), el('b', { text: total.days + ' days' }))
+      )
     ));
 
     if (typeof dialog.showModal === 'function') {
